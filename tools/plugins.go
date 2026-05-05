@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,12 +23,12 @@ type GetPluginParams struct {
 }
 
 type GetPluginResult struct {
-	Installed bool   `json:"installed"`
-	PluginID  string `json:"pluginId"`
-	Name      string `json:"name,omitempty"`
-	Version   string `json:"version,omitempty"`
-	Type      string `json:"type,omitempty"`
-	Enabled   *bool  `json:"enabled,omitempty"`
+	Installed  bool   `json:"installed"`
+	PluginID   string `json:"pluginId"`
+	Name       string `json:"name,omitempty"`
+	Version    string `json:"version,omitempty"`
+	Type       string `json:"type,omitempty"`
+	Enabled    *bool  `json:"enabled,omitempty"`
 	Suggestion string `json:"suggestion,omitempty"` // Optional suggestion for next steps, e.g. installing the plugin if not found
 }
 
@@ -144,6 +145,8 @@ type InstallPluginResult struct {
 // It is a variable to allow overriding in tests.
 var grafanaComCatalogURL = "https://grafana.com/api/plugins"
 
+var errPluginNotFound = errors.New("plugin not found")
+
 // grafanaComPluginResponse mirrors the relevant fields from the Grafana plugin catalog API.
 type grafanaComPluginResponse struct {
 	Version string `json:"version"`
@@ -160,6 +163,9 @@ func fetchLatestPluginVersion(ctx context.Context, pluginID string) (string, err
 		return "", fmt.Errorf("do request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", errPluginNotFound
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
@@ -180,6 +186,9 @@ func installPlugin(ctx context.Context, args InstallPluginParams) (*InstallPlugi
 
 	if args.Version == "" {
 		latestVersion, err := fetchLatestPluginVersion(ctx, pluginID)
+		if errors.Is(err, errPluginNotFound) {
+			return nil, fmt.Errorf("plugin %s was not found in the Grafana plugin catalog", pluginID)
+		}
 		result := &InstallPluginResult{
 			PluginID:             pluginID,
 			ConfirmationRequired: true,
@@ -202,9 +211,9 @@ func installPlugin(ctx context.Context, args InstallPluginParams) (*InstallPlugi
 	}
 
 	return &InstallPluginResult{
-		PluginID: pluginID,
-		Message:  "Plugin installed successfully. Grafana may need to be restarted for the plugin to become active.",
-		Suggestion: "Configure a new data source for the plugin.", // For now keeping this static to a single suggestion, down the line we may end up with a list 
+		PluginID:   pluginID,
+		Message:    "Plugin installed successfully. Grafana may need to be restarted for the plugin to become active.",
+		Suggestion: "Configure a new data source for the plugin.", // For now keeping this static to a single suggestion, down the line we may end up with a list
 	}, nil
 }
 

@@ -484,6 +484,21 @@ func TestInstallPlugin_NoVersion_LookupFails_StillPromptsForConfirmation(t *test
 	assert.Contains(t, result.Message, "grafana-test-plugin")
 }
 
+func TestInstallPlugin_NoVersion_PluginNotFound(t *testing.T) {
+	versionCatalogTestServer(t, "missing-plugin", "", http.StatusNotFound)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("unexpected call to Grafana instance")
+	}))
+	t.Cleanup(ts.Close)
+
+	ctx := pluginTestContext(t, ts.URL)
+	result, err := installPlugin(ctx, InstallPluginParams{PluginID: "missing-plugin"})
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "plugin missing-plugin was not found")
+}
+
 func TestInstallPlugin_WithVersion_Success(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
