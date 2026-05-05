@@ -243,6 +243,12 @@ type catalogPlugin struct {
 
 type catalogListResponse struct {
 	Items []catalogPlugin `json:"items"`
+	Links []catalogLink   `json:"links"`
+}
+
+type catalogLink struct {
+	Rel  string `json:"rel"`
+	Href string `json:"href"`
 }
 
 type SearchPluginsParams struct {
@@ -297,30 +303,64 @@ func pluginMatchesQuery(p catalogPlugin, query string) bool {
 	return false
 }
 
+func nextCatalogPageURL(currentURL string, links []catalogLink) (string, error) {
+	for _, link := range links {
+		if link.Rel != "next" || link.Href == "" {
+			continue
+		}
+
+		baseURL, err := url.Parse(currentURL)
+		if err != nil {
+			return "", fmt.Errorf("parse catalog URL: %w", err)
+		}
+		linkURL, err := url.Parse(link.Href)
+		if err != nil {
+			return "", fmt.Errorf("parse catalog next URL: %w", err)
+		}
+		nextURL := baseURL.ResolveReference(linkURL)
+		if strings.HasPrefix(baseURL.Path, "/api/") && strings.HasPrefix(nextURL.Path, "/plugins") {
+			nextURL.Path = "/api" + nextURL.Path
+		}
+		return nextURL.String(), nil
+	}
+	return "", nil
+}
+
 func searchPlugins(ctx context.Context, args SearchPluginsParams) (*SearchPluginsResult, error) {
 	limit := 10
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, grafanaComCatalogURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch plugin catalog: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch plugin catalog: unexpected status %d", resp.StatusCode)
-	}
+	var catalogItems []catalogPlugin
+	for catalogURL := grafanaComCatalogURL; catalogURL != ""; {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, catalogURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("fetch plugin catalog: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("fetch plugin catalog: unexpected status %d", resp.StatusCode)
+		}
 
-	var catalog catalogListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&catalog); err != nil {
-		return nil, fmt.Errorf("decode catalog: %w", err)
+		var catalog catalogListResponse
+		if err := json.NewDecoder(resp.Body).Decode(&catalog); err != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("decode catalog: %w", err)
+		}
+		_ = resp.Body.Close()
+
+		catalogItems = append(catalogItems, catalog.Items...)
+		catalogURL, err = nextCatalogPageURL(catalogURL, catalog.Links)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	query := strings.ToLower(strings.TrimSpace(args.Query))
 	var matched []catalogPlugin
-	for _, p := range catalog.Items {
+	for _, p := range catalogItems {
 		if pluginMatchesQuery(p, query) {
 			matched = append(matched, p)
 		}

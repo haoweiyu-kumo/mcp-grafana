@@ -325,6 +325,43 @@ func TestSearchPlugins_TruncatesToTenAndReportsTotal(t *testing.T) {
 	assert.NotEmpty(t, result.Note)
 }
 
+func TestSearchPlugins_FollowsCatalogPagination(t *testing.T) {
+	var requestedPaths []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPaths = append(requestedPaths, r.URL.RequestURI())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/plugins":
+			_ = json.NewEncoder(w).Encode(catalogListResponse{
+				Items: []catalogPlugin{
+					{Slug: "first-page-plugin", Name: "First Page Plugin", SignatureType: "community", Status: "active"},
+				},
+				Links: []catalogLink{{Rel: "next", Href: "/plugins/next"}},
+			})
+		case "/api/plugins/next":
+			_ = json.NewEncoder(w).Encode(catalogListResponse{
+				Items: []catalogPlugin{
+					{Slug: "second-page-plugin", Name: "Second Page Plugin", SignatureType: "community", Status: "active"},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(func() {
+		grafanaComCatalogURL = "https://grafana.com/api/plugins"
+		ts.Close()
+	})
+	grafanaComCatalogURL = ts.URL + "/api/plugins"
+
+	result, err := searchPlugins(context.Background(), SearchPluginsParams{Query: "second page"})
+
+	require.NoError(t, err)
+	require.Len(t, result.Results, 1)
+	assert.Equal(t, "second-page-plugin", result.Results[0].PluginID)
+	assert.Equal(t, []string{"/api/plugins", "/api/plugins/next"}, requestedPaths)
+}
+
 func TestSearchPlugins_MatchesSlug(t *testing.T) {
 	catalogTestServer(t, []catalogPlugin{
 		{Slug: "grafana-piechart-panel", Name: "Some Panel", SignatureType: "grafana", Status: "active"},
