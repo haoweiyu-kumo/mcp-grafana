@@ -97,6 +97,22 @@ type onCallUserInternal struct {
 	Role     any    `json:"role"`
 }
 
+// alertGroupStateToStatus converts a string state to the internal API numeric status query value.
+// Returns the numeric string if known, or empty string if unrecognized.
+func alertGroupStateToStatus(state string) string {
+	switch state {
+	case "new":
+		return "0"
+	case "acknowledged":
+		return "1"
+	case "resolved":
+		return "2"
+	case "silenced":
+		return "3"
+	}
+	return ""
+}
+
 // alertGroupStatusToState converts the internal API numeric status to a string state.
 func alertGroupStatusToState(status any) string {
 	switch v := status.(type) {

@@ -222,7 +222,9 @@ func proxyListAlertGroups(ctx context.Context, args ListAlertGroupsParams) ([]*O
 		params.Set("integration_id", args.IntegrationID)
 	}
 	if args.State != "" {
-		params.Set("state", args.State)
+		if statusVal := alertGroupStateToStatus(args.State); statusVal != "" {
+			params.Set("status", statusVal)
+		}
 	}
 	if args.TeamID != "" {
 		params.Set("team", args.TeamID)
