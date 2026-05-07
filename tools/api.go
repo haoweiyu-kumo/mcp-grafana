@@ -37,6 +37,13 @@ type APIRequestParams struct {
 	JQ       string            `json:"jq,omitempty" jsonschema:"description=A jq expression to filter or transform the JSON response (e.g. '.dashboards[] | .title')."`
 }
 
+type APIRequestReadOnlyParams struct {
+	Endpoint string            `json:"endpoint" jsonschema:"required,description=The API path relative to the Grafana base URL (e.g. '/api/org'\\, '/api/dashboards/uid/abc123'). Must start with '/'."`
+	Method   string            `json:"method,omitempty" jsonschema:"enum=GET,description=HTTP method. Only GET is allowed. Defaults to GET"`
+	Headers  map[string]string `json:"headers,omitempty" jsonschema:"description=Additional HTTP headers to include in the request."`
+	JQ       string            `json:"jq,omitempty" jsonschema:"description=A jq expression to filter or transform the JSON response (e.g. '.dashboards[] | .title')."`
+}
+
 type APIRequestResult struct {
 	Status  int               `json:"status"`
 	Headers map[string]string `json:"headers,omitempty"`
@@ -176,7 +183,7 @@ var APIRequestReadOnly = mcpgrafana.MustTool(
 	mcp.WithReadOnlyHintAnnotation(true),
 )
 
-func apiRequestReadOnly(ctx context.Context, args APIRequestParams) (*APIRequestResult, error) {
+func apiRequestReadOnly(ctx context.Context, args APIRequestReadOnlyParams) (*APIRequestResult, error) {
 	method := strings.ToUpper(args.Method)
 	if method == "" {
 		method = http.MethodGet
@@ -184,7 +191,12 @@ func apiRequestReadOnly(ctx context.Context, args APIRequestParams) (*APIRequest
 	if !readOnlyMethods[method] {
 		return nil, fmt.Errorf("method %s is not allowed in read-only mode; only GET requests are permitted", method)
 	}
-	return apiRequest(ctx, args)
+	return apiRequest(ctx, APIRequestParams{
+		Endpoint: args.Endpoint,
+		Method:   args.Method,
+		Headers:  args.Headers,
+		JQ:       args.JQ,
+	})
 }
 
 func AddAPITools(mcp *server.MCPServer, enableWriteTools bool) {

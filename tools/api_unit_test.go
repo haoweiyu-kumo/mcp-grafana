@@ -221,7 +221,7 @@ func TestAPIRequest_ReadOnlyRejectsNonGET(t *testing.T) {
 	ctx := apiTestContext(t, "http://localhost")
 
 	for _, method := range []string{"POST", "PUT", "PATCH", "DELETE"} {
-		_, err := apiRequestReadOnly(ctx, APIRequestParams{
+		_, err := apiRequestReadOnly(ctx, APIRequestReadOnlyParams{
 			Endpoint: "/api/org",
 			Method:   method,
 		})
@@ -238,7 +238,7 @@ func TestAPIRequest_ReadOnlyAllowsGET(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	ctx := apiTestContext(t, ts.URL)
-	result, err := apiRequestReadOnly(ctx, APIRequestParams{Endpoint: "/api/org"})
+	result, err := apiRequestReadOnly(ctx, APIRequestReadOnlyParams{Endpoint: "/api/org"})
 
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, result.Status)
@@ -253,7 +253,7 @@ func TestAPIRequest_ReadOnlyDefaultMethodIsGET(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	ctx := apiTestContext(t, ts.URL)
-	_, err := apiRequestReadOnly(ctx, APIRequestParams{Endpoint: "/api/org"})
+	_, err := apiRequestReadOnly(ctx, APIRequestReadOnlyParams{Endpoint: "/api/org"})
 	require.NoError(t, err)
 }
 
