@@ -224,7 +224,6 @@ func amixrGetShift(ctx context.Context, shiftID string) (*OnCallShift, error) {
 		Name:          shift.Name,
 		Type:          shift.Type,
 		PriorityLevel: shift.Level,
-		ShiftStart:    shift.Start,
 		RotationStart: shift.Start,
 		Frequency:     shift.Frequency,
 		Interval:      derefIntOr(shift.Interval, 0),

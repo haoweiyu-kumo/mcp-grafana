@@ -292,21 +292,15 @@ func TestProxyListSchedules(t *testing.T) {
 }
 
 func TestProxyPagination(t *testing.T) {
-	page := 0
+	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		page++
+		requestCount++
 		w.Header().Set("Content-Type", "application/json")
-		if page == 1 {
-			nextURL := "https://oncall-prod.grafana.net/oncall/api/internal/v1/users/?page=2"
-			_ = json.NewEncoder(w).Encode(paginatedResult[onCallUserInternal]{
-				Results: []onCallUserInternal{{PK: "U1", Username: "user1"}},
-				Next:    &nextURL,
-			})
-		} else {
-			_ = json.NewEncoder(w).Encode(paginatedResult[onCallUserInternal]{
-				Results: []onCallUserInternal{{PK: "U2", Username: "user2"}},
-			})
-		}
+		nextURL := "https://oncall-prod.grafana.net/oncall/api/internal/v1/users/?page=2"
+		_ = json.NewEncoder(w).Encode(paginatedResult[onCallUserInternal]{
+			Results: []onCallUserInternal{{PK: "U1", Username: "user1"}},
+			Next:    &nextURL,
+		})
 	}))
 	defer server.Close()
 
@@ -318,7 +312,7 @@ func TestProxyPagination(t *testing.T) {
 
 	result, err := proxyListUsers(ctx, ListOnCallUsersParams{})
 	require.NoError(t, err)
-	require.Len(t, result, 2)
+	require.Len(t, result, 1, "fetchPage should return only the single requested page, not auto-paginate")
 	assert.Equal(t, "U1", result[0].ID)
-	assert.Equal(t, "U2", result[1].ID)
+	assert.Equal(t, 1, requestCount, "fetchPage should make exactly one request")
 }

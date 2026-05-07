@@ -97,53 +97,42 @@ func handleProxyErrorResponse(resp *http.Response) error {
 	return fmt.Errorf("request failed with status %d", resp.StatusCode)
 }
 
-// fetchPaginated fetches all pages from a paginated endpoint.
-func fetchPaginated[T any](ctx context.Context, c *oncallProxyClient, path string) ([]T, error) {
-	var all []T
-	next := path
-	for next != "" {
-		resp, err := c.doRequest(ctx, http.MethodGet, next, nil)
-		if err != nil {
-			return nil, err
+// fetchPage fetches a single page from a paginated endpoint.
+// Callers pass the page number via query parameters in the path;
+// this function does not follow "next" links, matching the single-page
+// semantics of the amixr (public API) path.
+func fetchPage[T any](ctx context.Context, c *oncallProxyClient, path string) ([]T, error) {
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		if len(body) > 0 {
+			return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
 		}
-		body, err := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			if len(body) > 0 {
-				return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
-			}
-			return nil, fmt.Errorf("request failed with status %d", resp.StatusCode)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("reading response: %w", err)
-		}
+		return nil, fmt.Errorf("request failed with status %d", resp.StatusCode)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
 
-		// The internal API returns either paginated {"results": [...], "next": "..."} or a raw array.
-		trimmed := bytes.TrimSpace(body)
-		if len(trimmed) > 0 && trimmed[0] == '[' {
-			var items []T
-			if err := json.Unmarshal(body, &items); err != nil {
-				return nil, fmt.Errorf("decoding response: %w", err)
-			}
-			all = append(all, items...)
-			break
-		}
-
-		var page paginatedResult[T]
-		if err := json.Unmarshal(body, &page); err != nil {
+	// The internal API returns either paginated {"results": [...], "next": "..."} or a raw array.
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		var items []T
+		if err := json.Unmarshal(body, &items); err != nil {
 			return nil, fmt.Errorf("decoding response: %w", err)
 		}
-		all = append(all, page.Results...)
-
-		if page.Next == nil || *page.Next == "" {
-			break
-		}
-		next, err = extractNextPath(*page.Next)
-		if err != nil {
-			return nil, fmt.Errorf("pagination: %w", err)
-		}
+		return items, nil
 	}
-	return all, nil
+
+	var page paginatedResult[T]
+	if err := json.Unmarshal(body, &page); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	return page.Results, nil
 }
 
 // fetchOne fetches a single resource by ID.
@@ -208,7 +197,7 @@ func proxyListAlertGroups(ctx context.Context, args ListAlertGroupsParams) ([]*O
 		path += "?" + params.Encode()
 	}
 
-	internal, err := fetchPaginated[onCallAlertGroupInternal](ctx, client, path)
+	internal, err := fetchPage[onCallAlertGroupInternal](ctx, client, path)
 	if err != nil {
 		return nil, fmt.Errorf("listing alert groups: %w", err)
 	}
@@ -259,7 +248,7 @@ func proxyListSchedules(ctx context.Context, args ListOnCallSchedulesParams) ([]
 		path += "?" + params.Encode()
 	}
 
-	schedules, err := fetchPaginated[onCallScheduleInternal](ctx, client, path)
+	schedules, err := fetchPage[onCallScheduleInternal](ctx, client, path)
 	if err != nil {
 		return nil, fmt.Errorf("listing schedules: %w", err)
 	}
@@ -321,7 +310,7 @@ func proxyListUsers(ctx context.Context, args ListOnCallUsersParams) ([]*OnCallU
 		path += "?" + params.Encode()
 	}
 
-	internal, err := fetchPaginated[onCallUserInternal](ctx, client, path)
+	internal, err := fetchPage[onCallUserInternal](ctx, client, path)
 	if err != nil {
 		return nil, fmt.Errorf("listing users: %w", err)
 	}
@@ -348,7 +337,7 @@ func proxyListTeams(ctx context.Context, args ListOnCallTeamsParams) ([]*OnCallT
 		path += "?" + params.Encode()
 	}
 
-	teams, err := fetchPaginated[OnCallTeam](ctx, client, path)
+	teams, err := fetchPage[OnCallTeam](ctx, client, path)
 	if err != nil {
 		return nil, fmt.Errorf("listing teams: %w", err)
 	}
